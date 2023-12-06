@@ -1,282 +1,552 @@
-//ref link:[1] https://github.com/freecores/jtag/blob/master/tap/rtl/verilog/tap_top.v
-//          [2]https://www.fpga4fun.com/JTAG2.html 
-//          [3]https://www.xjtag.com/about-jtag/jtag-a-technical-overview/ 
-//final from: www.opencores.com
-//Jtag: TDI,TDO,TMS and TCK;
-//What is important is that TAP controller state machine
-//Shift-DR and shift-IR are used in combination with the TDI and TDO lines;
+// Ref: https://github.com/freecores/jtag/blob/master/tap/rtl/verilog/tap_top.v
 
-//IR--Instruction Register;  DR:Data Register;
-//=================================================
+// synopsys translate_off
+`include "timescale.v"
+// synopsys translate_on
+// Define IDCODE Value
+`define IDCODE_VALUE  32'h149511c3
+// 0001             version
+// 0100100101010001 part number (IQ)
+// 00011100001      manufacturer id (flextronics)
+// 1                required by standard
 
-//DR--Data Register;each IR value selects a different DR;
-// JTAG Registers + TAP Controller
-  
-//====================================================
-//From edaplayground
-// JTAG Implementation
-// Design Name : design
-// File Name   : design.v
-//=====================================================
-module jtag (
-  	// JTAG-related IO
-	input TCK, // clock
-	input TDI,
-	output reg TDO,
-	input TMS,
-  	// AHB-related IO
-  	input HREADY,
-  	input HRESP,
-  	input [31:0] HRDATA,
-  	output reg HWRITE,
-  	output reg [1:0] HTRANS,
-  	output reg [31:0] HWDATA,
-  	output reg [31:0] HADDR
-);
-//=============Internal Constants======================
-parameter REGISTER_SIZE = 32;
-parameter IR_SIZE = 4;
-parameter STATE_SIZE = 4;
-//=============States==================================
-parameter TEST_LOGIC_RESET = 4'h0, 
-        RUN_TEST_IDLE = 4'hf, 
-        SELECT_DR_SCAN = 4'he, 
-        CAPTURE_DR = 4'hd, 
-        SHIFT_DR = 4'hc, 
-        EXIT_1_DR = 4'hb, 
-        PAUSE_DR = 4'ha, 
-        EXIT_2_DR = 4'h9, 
-        UPDATE_DR = 4'h8, 
-        SELECT_IR_SCAN = 4'h7, 
-        CAPTURE_IR = 4'h6, 
-        SHIFT_IR = 4'h5, 
-        EXIT_1_IR = 4'h4, 
-        PAUSE_IR = 4'h3, 
-        EXIT_2_IR = 4'h2, 
-        UPDATE_IR = 4'h1;
-//=============Input MUX===============================
-  parameter BYPASS = 4'b0000;
-  parameter IDCODE = 4'b1000;
-  parameter ADDR =   4'b0100;
-  parameter WDATA =  4'b1100;
-  parameter RDATA =  4'b0010;
-//=============Internal Variables======================
-  reg [IR_SIZE-1:0] IR;
-  reg [IR_SIZE-1:0] LATCH_IR;
-  reg [STATE_SIZE-1:0] state;
-  reg [STATE_SIZE-1:0] next_state;
-//==========Code startes Here==========================
-always @ (posedge TCK)
-begin : JTAG
- case(state)
-	TEST_LOGIC_RESET : if (TMS == 1'b1) begin
-	             state <= TEST_LOGIC_RESET;
-	           end else if (TMS == 1'b0) begin
-	             state <= RUN_TEST_IDLE;
-	           end
-	RUN_TEST_IDLE : if (TMS == 1'b1) begin
-	            state <= SELECT_DR_SCAN;
-	          end else if (TMS == 1'b0) begin
-	            state <= RUN_TEST_IDLE;
-	          end
-	SELECT_DR_SCAN : if (TMS == 1'b1) begin
-	            state <= SELECT_IR_SCAN;
-	          end else if (TMS == 1'b0) begin
-	            state <= CAPTURE_DR;
-	          end
-	CAPTURE_DR : if (TMS == 1'b1) begin
-	            state <= EXIT_1_DR;
-	          end else if (TMS == 1'b0) begin
-	            state <= SHIFT_DR;
-	          end
-	SHIFT_DR : if (TMS == 1'b1) begin
-	            state <= EXIT_1_DR;
-	          end else if (TMS == 1'b0) begin
-	            state <= SHIFT_DR;
-	          end
-	EXIT_1_DR : if (TMS == 1'b1) begin
-	            state <= UPDATE_DR;
-	          end else if (TMS == 1'b0) begin
-	            state <= PAUSE_DR;
-	          end
-	PAUSE_DR : if (TMS == 1'b1) begin
-	            state <= EXIT_2_DR;
-	          end else if (TMS == 1'b0) begin
-	            state <= PAUSE_DR;
-	          end
-	EXIT_2_DR : if (TMS == 1'b1) begin
-	            state <= UPDATE_DR;
-	          end else if (TMS == 1'b0) begin
-	            state <= SHIFT_DR;
-	          end
-	UPDATE_DR : if (TMS == 1'b1) begin
-	            state <= SELECT_DR_SCAN;
-	          end else if (TMS == 1'b0) begin
-	            state <= RUN_TEST_IDLE;
-	          end
-	SELECT_IR_SCAN : if (TMS == 1'b1) begin
-	            state <= TEST_LOGIC_RESET;
-	          end else if (TMS == 1'b0) begin
-	            state <= CAPTURE_IR;
-	          end
-	CAPTURE_IR : if (TMS == 1'b1) begin
-	            state <= EXIT_1_IR;
-	          end else if (TMS == 1'b0) begin
-	            state <= SHIFT_IR;
-	          end
-	SHIFT_IR : if (TMS == 1'b1) begin
-	            state <= EXIT_1_IR;
-	          end else if (TMS == 1'b0) begin
-	            state <= SHIFT_IR;
-	          end
-	EXIT_1_IR : if (TMS == 1'b1) begin
-	            state <= UPDATE_IR;
-	          end else if (TMS == 1'b0) begin
-	            state <= PAUSE_IR;
-	          end
-	PAUSE_IR : if (TMS == 1'b1) begin
-	            state <= EXIT_2_IR;
-	          end else if (TMS == 1'b0) begin
-	            state <= PAUSE_IR;
-	          end
-	EXIT_2_IR : if (TMS == 1'b1) begin
-	            state <= UPDATE_IR;
-	          end else if (TMS == 1'b0) begin
-	            state <= SHIFT_IR;
-	          end
-	UPDATE_IR : if (TMS == 1'b1) begin
-	            state <= SELECT_DR_SCAN;
-	          end else if (TMS == 1'b0) begin
-	            state <= RUN_TEST_IDLE;
-	          end
-	default : state <= TEST_LOGIC_RESET;
+// Length of the Instruction register
+`define	IR_LENGTH	4
+
+// Supported Instructions
+`define EXTEST          4'b0000
+`define SAMPLE_PRELOAD  4'b0001
+`define IDCODE          4'b0010
+`define DEBUG           4'b1000
+`define MBIST           4'b1001
+`define BYPASS          4'b1111
+
+// Top module
+module tap_top(
+                // JTAG pads
+                tms_pad_i, 
+                tck_pad_i, 
+                trst_pad_i, 
+                tdi_pad_i, 
+                tdo_pad_o, 
+                tdo_padoe_o,
+
+                // TAP states
+                shift_dr_o,
+                pause_dr_o, 
+                update_dr_o,
+                capture_dr_o,
+                
+                // Select signals for boundary scan or mbist
+                extest_select_o, 
+                sample_preload_select_o,
+                mbist_select_o,
+                debug_select_o,
+                
+                // TDO signal that is connected to TDI of sub-modules.
+                tdo_o, 
+                
+                // TDI signals from sub-modules
+                debug_tdi_i,    // from debug module
+                bs_chain_tdi_i, // from Boundary Scan Chain
+                mbist_tdi_i     // from Mbist Chain
+              );
+
+
+// JTAG pins
+input   tms_pad_i;      // JTAG test mode select pad
+input   tck_pad_i;      // JTAG test clock pad
+input   trst_pad_i;     // JTAG test reset pad
+input   tdi_pad_i;      // JTAG test data input pad
+output  tdo_pad_o;      // JTAG test data output pad
+output  tdo_padoe_o;    // Output enable for JTAG test data output pad 
+
+// TAP states
+output  shift_dr_o;
+output  pause_dr_o;
+output  update_dr_o;
+output  capture_dr_o;
+
+// Select signals for boundary scan or mbist
+output  extest_select_o;
+output  sample_preload_select_o;
+output  mbist_select_o;
+output  debug_select_o;
+
+// TDO signal that is connected to TDI of sub-modules.
+output  tdo_o;
+
+// TDI signals from sub-modules
+input   debug_tdi_i;    // from debug module
+input   bs_chain_tdi_i; // from Boundary Scan Chain
+input   mbist_tdi_i;    // from Mbist Chain
+
+// Registers
+reg     test_logic_reset;
+reg     run_test_idle;
+reg     select_dr_scan;
+reg     capture_dr;
+reg     shift_dr;
+reg     exit1_dr;
+reg     pause_dr;
+reg     exit2_dr;
+reg     update_dr;
+reg     select_ir_scan;
+reg     capture_ir;
+reg     shift_ir, shift_ir_neg;
+reg     exit1_ir;
+reg     pause_ir;
+reg     exit2_ir;
+reg     update_ir;
+reg     extest_select;
+reg     sample_preload_select;
+reg     idcode_select;
+reg     mbist_select;
+reg     debug_select;
+reg     bypass_select;
+reg     tdo_pad_o;
+reg     tdo_padoe_o;
+reg     tms_q1, tms_q2, tms_q3, tms_q4;
+wire    tms_reset;
+
+assign tdo_o = tdi_pad_i;
+assign shift_dr_o = shift_dr;
+assign pause_dr_o = pause_dr;
+assign update_dr_o = update_dr;
+assign capture_dr_o = capture_dr;
+
+assign extest_select_o = extest_select;
+assign sample_preload_select_o = sample_preload_select;
+assign mbist_select_o = mbist_select;
+assign debug_select_o = debug_select;
+
+
+always @ (posedge tck_pad_i)
+begin
+  tms_q1 <= #1 tms_pad_i;
+  tms_q2 <= #1 tms_q1;
+  tms_q3 <= #1 tms_q2;
+  tms_q4 <= #1 tms_q3;
+end
+
+
+assign tms_reset = tms_q1 & tms_q2 & tms_q3 & tms_q4 & tms_pad_i;    // 5 consecutive TMS=1 causes reset
+
+
+/**********************************************************************************
+*                                                                                 *
+*   TAP State Machine: Fully JTAG compliant                                       *
+*                                                                                 *
+**********************************************************************************/
+
+// test_logic_reset state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    test_logic_reset<=#1 1'b1;
+  else if (tms_reset)
+    test_logic_reset<=#1 1'b1;
+  else
+    begin
+      if(tms_pad_i & (test_logic_reset | select_ir_scan))
+        test_logic_reset<=#1 1'b1;
+      else
+        test_logic_reset<=#1 1'b0;
+    end
+end
+
+// run_test_idle state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    run_test_idle<=#1 1'b0;
+  else if (tms_reset)
+    run_test_idle<=#1 1'b0;
+  else
+  if(~tms_pad_i & (test_logic_reset | run_test_idle | update_dr | update_ir))
+    run_test_idle<=#1 1'b1;
+  else
+    run_test_idle<=#1 1'b0;
+end
+
+// select_dr_scan state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    select_dr_scan<=#1 1'b0;
+  else if (tms_reset)
+    select_dr_scan<=#1 1'b0;
+  else
+  if(tms_pad_i & (run_test_idle | update_dr | update_ir))
+    select_dr_scan<=#1 1'b1;
+  else
+    select_dr_scan<=#1 1'b0;
+end
+
+// capture_dr state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    capture_dr<=#1 1'b0;
+  else if (tms_reset)
+    capture_dr<=#1 1'b0;
+  else
+  if(~tms_pad_i & select_dr_scan)
+    capture_dr<=#1 1'b1;
+  else
+    capture_dr<=#1 1'b0;
+end
+
+// shift_dr state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    shift_dr<=#1 1'b0;
+  else if (tms_reset)
+    shift_dr<=#1 1'b0;
+  else
+  if(~tms_pad_i & (capture_dr | shift_dr | exit2_dr))
+    shift_dr<=#1 1'b1;
+  else
+    shift_dr<=#1 1'b0;
+end
+
+// exit1_dr state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    exit1_dr<=#1 1'b0;
+  else if (tms_reset)
+    exit1_dr<=#1 1'b0;
+  else
+  if(tms_pad_i & (capture_dr | shift_dr))
+    exit1_dr<=#1 1'b1;
+  else
+    exit1_dr<=#1 1'b0;
+end
+
+// pause_dr state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    pause_dr<=#1 1'b0;
+  else if (tms_reset)
+    pause_dr<=#1 1'b0;
+  else
+  if(~tms_pad_i & (exit1_dr | pause_dr))
+    pause_dr<=#1 1'b1;
+  else
+    pause_dr<=#1 1'b0;
+end
+
+// exit2_dr state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    exit2_dr<=#1 1'b0;
+  else if (tms_reset)
+    exit2_dr<=#1 1'b0;
+  else
+  if(tms_pad_i & pause_dr)
+    exit2_dr<=#1 1'b1;
+  else
+    exit2_dr<=#1 1'b0;
+end
+
+// update_dr state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    update_dr<=#1 1'b0;
+  else if (tms_reset)
+    update_dr<=#1 1'b0;
+  else
+  if(tms_pad_i & (exit1_dr | exit2_dr))
+    update_dr<=#1 1'b1;
+  else
+    update_dr<=#1 1'b0;
+end
+
+// select_ir_scan state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    select_ir_scan<=#1 1'b0;
+  else if (tms_reset)
+    select_ir_scan<=#1 1'b0;
+  else
+  if(tms_pad_i & select_dr_scan)
+    select_ir_scan<=#1 1'b1;
+  else
+    select_ir_scan<=#1 1'b0;
+end
+
+// capture_ir state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    capture_ir<=#1 1'b0;
+  else if (tms_reset)
+    capture_ir<=#1 1'b0;
+  else
+  if(~tms_pad_i & select_ir_scan)
+    capture_ir<=#1 1'b1;
+  else
+    capture_ir<=#1 1'b0;
+end
+
+// shift_ir state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    shift_ir<=#1 1'b0;
+  else if (tms_reset)
+    shift_ir<=#1 1'b0;
+  else
+  if(~tms_pad_i & (capture_ir | shift_ir | exit2_ir))
+    shift_ir<=#1 1'b1;
+  else
+    shift_ir<=#1 1'b0;
+end
+
+// exit1_ir state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    exit1_ir<=#1 1'b0;
+  else if (tms_reset)
+    exit1_ir<=#1 1'b0;
+  else
+  if(tms_pad_i & (capture_ir | shift_ir))
+    exit1_ir<=#1 1'b1;
+  else
+    exit1_ir<=#1 1'b0;
+end
+
+// pause_ir state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    pause_ir<=#1 1'b0;
+  else if (tms_reset)
+    pause_ir<=#1 1'b0;
+  else
+  if(~tms_pad_i & (exit1_ir | pause_ir))
+    pause_ir<=#1 1'b1;
+  else
+    pause_ir<=#1 1'b0;
+end
+
+// exit2_ir state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    exit2_ir<=#1 1'b0;
+  else if (tms_reset)
+    exit2_ir<=#1 1'b0;
+  else
+  if(tms_pad_i & pause_ir)
+    exit2_ir<=#1 1'b1;
+  else
+    exit2_ir<=#1 1'b0;
+end
+
+// update_ir state
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    update_ir<=#1 1'b0;
+  else if (tms_reset)
+    update_ir<=#1 1'b0;
+  else
+  if(tms_pad_i & (exit1_ir | exit2_ir))
+    update_ir<=#1 1'b1;
+  else
+    update_ir<=#1 1'b0;
+end
+
+/**********************************************************************************
+*                                                                                 *
+*   End: TAP State Machine                                                        *
+*                                                                                 *
+**********************************************************************************/
+
+
+
+/**********************************************************************************
+*                                                                                 *
+*   jtag_ir:  JTAG Instruction Register                                           *
+*                                                                                 *
+**********************************************************************************/
+reg [`IR_LENGTH-1:0]  jtag_ir;          // Instruction register
+reg [`IR_LENGTH-1:0]  latched_jtag_ir, latched_jtag_ir_neg;
+reg                   instruction_tdo;
+
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    jtag_ir[`IR_LENGTH-1:0] <= #1 `IR_LENGTH'b0;
+  else if(capture_ir)
+    jtag_ir <= #1 4'b0101;          // This value is fixed for easier fault detection
+  else if(shift_ir)
+    jtag_ir[`IR_LENGTH-1:0] <= #1 {tdi_pad_i, jtag_ir[`IR_LENGTH-1:1]};
+end
+
+always @ (negedge tck_pad_i)
+begin
+  instruction_tdo <= #1 jtag_ir[0];
+end
+/**********************************************************************************
+*                                                                                 *
+*   End: jtag_ir                                                                  *
+*                                                                                 *
+**********************************************************************************/
+
+
+
+/**********************************************************************************
+*                                                                                 *
+*   idcode logic                                                                  *
+*                                                                                 *
+**********************************************************************************/
+reg [31:0] idcode_reg;
+reg        idcode_tdo;
+
+always @ (posedge tck_pad_i)
+begin
+  if(idcode_select & shift_dr)
+    idcode_reg <= #1 {tdi_pad_i, idcode_reg[31:1]};
+  else
+    idcode_reg <= #1 `IDCODE_VALUE;
+end
+
+always @ (negedge tck_pad_i)
+begin
+    idcode_tdo <= #1 idcode_reg;
+end
+/**********************************************************************************
+*                                                                                 *
+*   End: idcode logic                                                             *
+*                                                                                 *
+**********************************************************************************/
+
+
+/**********************************************************************************
+*                                                                                 *
+*   Bypass logic                                                                  *
+*                                                                                 *
+**********************************************************************************/
+reg  bypassed_tdo;
+reg  bypass_reg;
+
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if (trst_pad_i)
+    bypass_reg<=#1 1'b0;
+  else if(shift_dr)
+    bypass_reg<=#1 tdi_pad_i;
+end
+
+always @ (negedge tck_pad_i)
+begin
+  bypassed_tdo <=#1 bypass_reg;
+end
+/**********************************************************************************
+*                                                                                 *
+*   End: Bypass logic                                                             *
+*                                                                                 *
+**********************************************************************************/
+
+
+/**********************************************************************************
+*                                                                                 *
+*   Activating Instructions                                                       *
+*                                                                                 *
+**********************************************************************************/
+// Updating jtag_ir (Instruction Register)
+always @ (posedge tck_pad_i or posedge trst_pad_i)
+begin
+  if(trst_pad_i)
+    latched_jtag_ir <=#1 `IDCODE;   // IDCODE selected after reset
+  else if (tms_reset)
+    latched_jtag_ir <=#1 `IDCODE;   // IDCODE selected after reset
+  else if(update_ir)
+    latched_jtag_ir <=#1 jtag_ir;
+end
+
+/**********************************************************************************
+*                                                                                 *
+*   End: Activating Instructions                                                  *
+*                                                                                 *
+**********************************************************************************/
+
+
+// Updating jtag_ir (Instruction Register)
+always @ (latched_jtag_ir)
+begin
+  extest_select           = 1'b0;
+  sample_preload_select   = 1'b0;
+  idcode_select           = 1'b0;
+  mbist_select            = 1'b0;
+  debug_select            = 1'b0;
+  bypass_select           = 1'b0;
+
+  case(latched_jtag_ir)    /* synthesis parallel_case */ 
+    `EXTEST:            extest_select           = 1'b1;    // External test
+    `SAMPLE_PRELOAD:    sample_preload_select   = 1'b1;    // Sample preload
+    `IDCODE:            idcode_select           = 1'b1;    // ID Code
+    `MBIST:             mbist_select            = 1'b1;    // Mbist test
+    `DEBUG:             debug_select            = 1'b1;    // Debug
+    `BYPASS:            bypass_select           = 1'b1;    // BYPASS
+    default:            bypass_select           = 1'b1;    // BYPASS
   endcase
 end
 
-  
-//inspiration from opencores.org
-reg instruction_tdo;
- 
-always @ (posedge TCK)
-begin
-  if (state == TEST_LOGIC_RESET)
-    IR[IR_SIZE-1:0] <= 0;
-  else if(state == CAPTURE_IR)
-    IR <= 4'b0000;
-  else if(state == SHIFT_IR)
-    IR[IR_SIZE-1:0] <= {TDI, IR[IR_SIZE-1:1]};  //Shift 4 clk
-end
-
-assign instruction_tdo = IR[0];
- 
-// Updating IR (Instruction Register)
-always @ (negedge TCK)
-begin
- if (state == TEST_LOGIC_RESET)
-    LATCH_IR <= 4'b0000;
-  else if(state == UPDATE_IR)
-    LATCH_IR <= IR; //complete the IR 
-end
-  
-// Bypass --IR 
-wire  bypassed_tdo;
-reg   bypass_reg;
- 
-always @ (posedge TCK)
-begin
-  if (state == TEST_LOGIC_RESET)
-    bypass_reg <= 1'b0;
-  else if (LATCH_IR == BYPASS && state == CAPTURE_DR)
-    bypass_reg<= 1'b0;
-  else if(LATCH_IR == BYPASS && state == SHIFT_DR)
-    bypass_reg<= TDI;   //Now the tdi represents data register
-end
- 
-assign bypassed_tdo = bypass_reg;
 
 
-
-// ID Code register
-reg [REGISTER_SIZE-1:0] DR_IDCODE;
-wire        idcode_tdo;
- 
-always @ (posedge TCK)
+/**********************************************************************************
+*                                                                                 *
+*   Multiplexing TDO data                                                         *
+*                                                                                 *
+**********************************************************************************/
+always @ (shift_ir_neg or exit1_ir or instruction_tdo or latched_jtag_ir_neg or idcode_tdo or
+          debug_tdi_i or bs_chain_tdi_i or mbist_tdi_i or 
+          bypassed_tdo)
 begin
-  if (state == TEST_LOGIC_RESET)
-    DR_IDCODE <= 32'hf0f0f0f0;
-  else if(LATCH_IR == IDCODE && state == CAPTURE_DR)
-    DR_IDCODE <= 32'hf0f0f0f0;
-  else if(LATCH_IR == IDCODE && state == SHIFT_DR)
-    DR_IDCODE <=  {TDI, DR_IDCODE[REGISTER_SIZE-1:1]};
-end
- 
-assign idcode_tdo = DR_IDCODE[0];
-
-  
-// ADDR register
-reg [REGISTER_SIZE-1:0] DR_ADDR;
-wire        addr_tdo;
- 
-always @ (posedge TCK)
-begin
-  if (state == TEST_LOGIC_RESET)
-    DR_ADDR <= 32'b0;
-  else if(LATCH_IR == ADDR && state == CAPTURE_DR)
-    DR_ADDR <= 32'b0;
-  else if(LATCH_IR == ADDR && state == SHIFT_DR)
-    DR_ADDR <=  {TDI, DR_ADDR[REGISTER_SIZE-1:1]};
-end
- 
-assign addr_tdo = DR_ADDR[0];
-  
-
-// WDATA register
-reg [REGISTER_SIZE-1:0] DR_WDATA;
-reg TOGGLE_WRITE;
-wire        wdata_tdo;
- 
-always @ (posedge TCK)
-begin
-  if (state == TEST_LOGIC_RESET)
+  if(shift_ir_neg)
+    tdo_pad_o = instruction_tdo;
+  else
     begin
-    	DR_WDATA <= 32'b0;
-  		TOGGLE_WRITE <= 1'b0;
-    end
-  else if(LATCH_IR == WDATA && state == CAPTURE_DR)
-    DR_WDATA <= 32'b0;
-  else if(LATCH_IR == WDATA && state == SHIFT_DR)
-    DR_WDATA <=  {TDI, DR_WDATA[REGISTER_SIZE-1:1]};
-  else if(LATCH_IR == WDATA && state == UPDATE_DR && HREADY == 1'b1)
-    begin
-        //setup for prepare
-    	HADDR <= DR_ADDR;
-    	HWRITE <= 1'b1;
-    	TOGGLE_WRITE <= 1'b1;
+      case(latched_jtag_ir_neg)    // synthesis parallel_case
+        `IDCODE:            tdo_pad_o = idcode_tdo;       // Reading ID code
+        `DEBUG:             tdo_pad_o = debug_tdi_i;      // Debug
+        `SAMPLE_PRELOAD:    tdo_pad_o = bs_chain_tdi_i;   // Sampling/Preloading
+        `EXTEST:            tdo_pad_o = bs_chain_tdi_i;   // External test
+        `MBIST:             tdo_pad_o = mbist_tdi_i;      // Mbist test
+        default:            tdo_pad_o = bypassed_tdo;     // BYPASS instruction
+      endcase
     end
 end
-    
-always @ (posedge TCK)
+
+
+// Tristate control for tdo_pad_o pin
+always @ (negedge tck_pad_i)
 begin
-  if (TOGGLE_WRITE == 1'b1 && LATCH_IR == WDATA)
-    begin
-    	TOGGLE_WRITE <= 1'b0;
-  		HWDATA <= DR_WDATA;
-    end
+  tdo_padoe_o <= #1 shift_ir | shift_dr | (pause_dr & debug_select);
 end
- 
-assign wdata_tdo = DR_WDATA[0];
-  
-  
-// Set TDO
-always @ (negedge TCK)
-  begin
-    case(LATCH_IR)
-      IDCODE:            TDO = idcode_tdo;
-      ADDR:				 TDO = addr_tdo;
-      default:           TDO = bypassed_tdo;
-    endcase
-  end
+/**********************************************************************************
+*                                                                                 *
+*   End: Multiplexing TDO data                                                    *
+*                                                                                 *
+**********************************************************************************/
+
+
+always @ (negedge tck_pad_i)
+begin
+  shift_ir_neg <= #1 shift_ir;
+  latched_jtag_ir_neg <= #1 latched_jtag_ir;
+end
+
 
 endmodule
-
 
